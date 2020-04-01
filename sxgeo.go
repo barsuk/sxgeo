@@ -717,7 +717,8 @@ func unpack(packType int, item []byte) (map[string]interface{}, error) {
 	return unpacked, nil
 }
 
-// get_num($ip)
+// Seek seeks an IP index in the DB
+// It's a reflect of PHP get_num($ip)
 func Seek(ip string) (uint32, error) {
 	IP := net.ParseIP(ip)
 	if IP == nil {
