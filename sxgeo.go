@@ -346,28 +346,28 @@ var I Info
 var M Meta
 
 // Reads the whole DB to the memory
-func ReadDBToMemory(path string) bool {
+func ReadDBToMemory(path string) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		panic(err)
+		return false, fmt.Errorf("cannot open file: %v", err)
 	}
 	defer f.Close()
 
 	h := make([]byte, 3)
 	_, err = f.Read(h)
 	if err != nil {
-		panic(err)
+		return false, fmt.Errorf("cannot read header: %v", err)
 	}
 	if err == io.EOF {
-		panic(fmt.Errorf("достигнут конец файла. Так быстро? %v", err))
+		return false, fmt.Errorf("достигнут конец файла. Так быстро? %v", err)
 	}
 
 	if string(h) != "SxG" {
-		panic(fmt.Errorf("this is not a SxGeo database! %v", err))
+		return false, fmt.Errorf("this is not a SxGeo database! %v", err)
 	}
 
 	if err := binary.Read(f, binary.BigEndian, &I); err != nil {
-		panic(fmt.Errorf("cannot unpack info: %v", err))
+		return false, fmt.Errorf("cannot unpack info: %v", err)
 	}
 
 	M.BlockLen = 3 + I.IdLen
@@ -375,7 +375,7 @@ func ReadDBToMemory(path string) bool {
 	packRaw := make([]byte, I.PackSize)
 	_, err = f.Read(packRaw)
 	if err != nil {
-		panic(fmt.Errorf("cannot read pack: %v", err))
+		return false, fmt.Errorf("cannot read pack: %v", err)
 	}
 	pack := bytes.Split(packRaw, []byte("\000"))
 	//for i := 0; i < cap(pack); i++ {
@@ -386,7 +386,7 @@ func ReadDBToMemory(path string) bool {
 	bIdxStr := make([]byte, int(I.BIdxLen)*4)
 	_, err = f.Read(bIdxStr)
 	if err != nil {
-		panic(fmt.Errorf("cannot read b-index: %v", err))
+		return false, fmt.Errorf("cannot read b-index: %v", err)
 	}
 	M.BIdxStr = bIdxStr
 
@@ -394,13 +394,13 @@ func ReadDBToMemory(path string) bool {
 	mIdxStr := make([]byte, I.MIdxLen*4)
 	_, err = f.Read(mIdxStr)
 	if err != nil {
-		panic(fmt.Errorf("cannot read m-index: %v", err))
+		return false, fmt.Errorf("cannot read m-index: %v", err)
 	}
 	M.MIdxStr = mIdxStr
 
 	bIdxArr := make([]uint32, len(M.BIdxStr)/4)
 	if err := binary.Read(bytes.NewReader(M.BIdxStr), binary.BigEndian, &bIdxArr); err != nil {
-		panic(fmt.Errorf("cannot unpack b-idx-array: %v", err))
+		return false, fmt.Errorf("cannot unpack b-idx-array: %v", err)
 	}
 	M.BIdxArr = bIdxArr
 
@@ -410,7 +410,7 @@ func ReadDBToMemory(path string) bool {
 		word := make([]byte, 4)
 		_, err := r.Read(word)
 		if err != nil {
-			panic(fmt.Errorf("ты не угадал с числом байтов: %v", err))
+			return false, fmt.Errorf("ты не угадал с числом байтов: %v", err)
 		}
 		mIdxArr = append(mIdxArr, word)
 		i += 4
@@ -419,35 +419,35 @@ func ReadDBToMemory(path string) bool {
 
 	dbBegin, err := f.Seek(0, 1)
 	if err != nil {
-		panic(fmt.Errorf("cannot seek to offset: %v", err))
+		return false, fmt.Errorf("cannot seek to offset: %v", err)
 	}
 	M.DbBegin = dbBegin
 
 	db := make([]byte, int(I.DbItems)*int(M.BlockLen))
 	_, err = f.Read(db)
 	if err != nil {
-		panic(fmt.Errorf("cannot read db to the memory: %v", err))
+		return false, fmt.Errorf("cannot read db to the memory: %v", err)
 	}
 	DB = db
 
 	regions := make([]byte, int(I.RegionSize))
 	_, err = f.Read(regions)
 	if err != nil {
-		panic(fmt.Errorf("cannot read regions to the memory: %v", err))
+		return false, fmt.Errorf("cannot read regions to the memory: %v", err)
 	}
 	Regions = regions
 
 	cities := make([]byte, int(I.CitySize))
 	_, err = f.Read(cities)
 	if err != nil {
-		panic(fmt.Errorf("cannot read regions to the memory: %v", err))
+		return false, fmt.Errorf("cannot read cities to the memory: %v", err)
 	}
 	Cities = cities
 
 	M.RegionsBegin = M.DbBegin + int64(I.DbItems)*int64(M.BlockLen)
 	M.CitiesBegin = M.RegionsBegin + int64(I.RegionSize)
 
-	return true
+	return true, nil
 }
 
 func GetCityFull(ip string) (*Full, error) {
