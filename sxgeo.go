@@ -301,12 +301,15 @@ type Meta struct {
 	DbBegin      int64
 	BIdxArr      []uint32
 	MIdxArr      [][]byte
-	Db           []byte
-	RegionsDb    []byte
-	CitiesDb     []byte
 	RegionsBegin int64
 	CitiesBegin  int64
 }
+
+var (
+	DB      []byte
+	Regions []byte
+	Cities  []byte
+)
 
 type Full struct {
 	City    *City    `json:"city"`
@@ -338,8 +341,9 @@ type Region struct {
 var I Info
 var M Meta
 
-func init() {
-	f, err := os.Open("./SxGeoCity.dat")
+// Reads the whole DB to the memory
+func ReadDBToMemory(path string) bool {
+	f, err := os.Open(path)
 	if err != nil {
 		panic(err)
 	}
@@ -420,24 +424,26 @@ func init() {
 	if err != nil {
 		panic(fmt.Errorf("cannot read db to the memory: %v", err))
 	}
-	M.Db = db
+	DB = db
 
 	regions := make([]byte, int(I.RegionSize))
 	_, err = f.Read(regions)
 	if err != nil {
 		panic(fmt.Errorf("cannot read regions to the memory: %v", err))
 	}
-	M.RegionsDb = regions
+	Regions = regions
 
 	cities := make([]byte, int(I.CitySize))
 	_, err = f.Read(cities)
 	if err != nil {
 		panic(fmt.Errorf("cannot read regions to the memory: %v", err))
 	}
-	M.CitiesDb = cities
+	Cities = cities
 
 	M.RegionsBegin = M.DbBegin + int64(I.DbItems)*int64(M.BlockLen)
 	M.CitiesBegin = M.RegionsBegin + int64(I.RegionSize)
+
+	return true
 }
 
 func GetCityFull(ip string) (*Full, error) {
@@ -513,9 +519,9 @@ func readData(seek uint32, max uint16, packType int) (map[string]interface{}, er
 	var raw []byte
 	if seek > 0 && max > 0 {
 		if packType == 1 {
-			raw = M.RegionsDb[seek : seek+uint32(max)]
+			raw = Regions[seek : seek+uint32(max)]
 		} else {
-			raw = M.CitiesDb[seek : seek+uint32(max)]
+			raw = Cities[seek : seek+uint32(max)]
 		}
 	}
 
@@ -783,14 +789,14 @@ func searchDb(ipN []byte, min uint32, max uint32) (uint32, error) {
 			offset := (min + max) >> 1
 			start := int(offset) * int(M.BlockLen)
 			end := start + 3
-			dbSubs := M.Db[start:end]
+			dbSubs := DB[start:end]
 			if string(bcd) > string(dbSubs) {
 				min = offset
 			} else {
 				max = offset
 			}
 		}
-		for ; string(bcd) >= string(M.Db[int(min)*int(M.BlockLen):int(min)*int(M.BlockLen)+3]) && min+1 < max;
+		for ; string(bcd) >= string(DB[int(min)*int(M.BlockLen):int(min)*int(M.BlockLen)+3]) && min+1 < max;
 		min++ {
 		}
 	} else {
@@ -798,7 +804,7 @@ func searchDb(ipN []byte, min uint32, max uint32) (uint32, error) {
 	}
 
 	start := int(min)*int(M.BlockLen) - int(I.IdLen)
-	bin := M.Db[start : start+int(I.IdLen)]
+	bin := DB[start : start+int(I.IdLen)]
 
 	hx := make([]byte, hex.EncodedLen(len(bin)))
 	_ = hex.Encode(hx, bin)
