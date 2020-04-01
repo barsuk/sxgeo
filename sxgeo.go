@@ -331,8 +331,10 @@ type City struct {
 }
 
 type Country struct {
-	ID  uint8  `json:"id"`
-	ISO string `json:"iso"`
+	ID     uint8  `json:"id"`
+	ISO    string `json:"iso"`
+	NameRu string `json:"name_ru"`
+	NameEn string `json:"name_en"`
 }
 
 type Region struct {
@@ -456,6 +458,13 @@ func GetCityFull(ip string) (*Full, error) {
 		return nil, err
 	}
 
+	//fmt.Printf("%b\n", val)
+	//fmt.Printf("%s\n", val)
+	//fmt.Printf("%b\n", buf)
+	//fmt.Printf("% x\n", buf)
+	//fmt.Printf("%v\n", ip)
+	//log.Fatalf("seek: %d", seek)
+
 	if seek < 1 {
 		return nil, fmt.Errorf("unknown error with seek")
 	}
@@ -472,6 +481,7 @@ func GetCityFull(ip string) (*Full, error) {
 func parseFullCity(seek uint32) (*Full, error) {
 	full := new(Full)
 	var regionSeek uint32
+	var onlyCountry bool
 	if seek < I.CountrySize {
 		country, err := readData(seek, I.MaxCountry, 0)
 		if err != nil {
@@ -481,8 +491,10 @@ func parseFullCity(seek uint32) (*Full, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot parse full city")
 		}
+
 		fmt.Printf("country: %v\n", country)
 		fmt.Printf("city 1: %v\n", city)
+		onlyCountry = true
 		panic("TODO")
 	} else {
 		city, err := readData(seek, I.MaxCity, 2)
@@ -514,6 +526,21 @@ func parseFullCity(seek uint32) (*Full, error) {
 		ISO:    fmt.Sprintf("%s", region["iso"]),
 		NameRu: fmt.Sprintf("%s", region["name_ru"]),
 		NameEn: fmt.Sprintf("%s", region["name_en"]),
+	}
+
+	if !onlyCountry {
+		country, err := readData(uint32(region["country_seek"].(uint16)), I.MaxCountry, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read country")
+		}
+		fmt.Printf("not only country: %v", country)
+		full.Country = &Country{
+			ID:     country["id"].(uint8),
+			ISO:    fmt.Sprintf("%s", country["iso"]),
+			NameRu: fmt.Sprintf("%s", country["name_ru"]),
+			NameEn: fmt.Sprintf("%s", country["name_en"]),
+		}
+		panic("ЛЬША не ПОЛЬША")
 	}
 
 	return full, nil
@@ -691,7 +718,7 @@ func unpack(packType int, item []byte) (map[string]interface{}, error) {
 			}
 			exp := float64(expInt)
 			result = float64(v) / (math.Pow(10, exp))
-			panic("n")
+			//panic("n")
 		case "N":
 			var v rune
 			if err := binary.Read(bytes.NewReader(val), hbo, &v); err != nil {
@@ -707,7 +734,7 @@ func unpack(packType int, item []byte) (map[string]interface{}, error) {
 		case "c":
 			v := bytes.TrimRight(val, " ")
 			result = v
-			panic("c")
+			//panic("c")
 		case "b":
 			result = val
 			length++
@@ -741,8 +768,6 @@ func Seek(ip string) (uint32, error) {
 	}
 
 	ipN := []byte(ip4) // $ipn = pack('N', $ipn);
-	//fmt.Printf("%b\n", ip4)
-	//fmt.Printf("%b\n", []byte(ip4))
 
 	blocksMin := M.BIdxArr[ip4[0]-1]
 	blocksMax := M.BIdxArr[ip4[0]]
@@ -790,7 +815,7 @@ func Seek(ip string) (uint32, error) {
 func searchDb(ipN []byte, min uint32, max uint32) (uint32, error) {
 	if max-min > 1 {
 		bcd := ipN[1:]
-		for ; max-min > 8; {
+		for max-min > 8 {
 			offset := (min + max) >> 1
 			start := int(offset) * int(M.BlockLen)
 			end := start + 3
@@ -801,19 +826,24 @@ func searchDb(ipN []byte, min uint32, max uint32) (uint32, error) {
 				max = offset
 			}
 		}
-		for ; string(bcd) >= string(DB[int(min)*int(M.BlockLen):int(min)*int(M.BlockLen)+3]) && min+1 < max;
-		min++ {
+
+		//while ( $ipn >= substr($str, $min * $this->block_len, 3) && ++$min < $max ) { };
+		for string(bcd) >= string(DB[int(min)*int(M.BlockLen):int(min)*int(M.BlockLen)+3]) &&
+			func(p *uint32) uint32 {
+				*p += 1
+				return *p
+			}(&min) < max {
 		}
 	} else {
 		min++
 	}
 
 	start := int(min)*int(M.BlockLen) - int(I.IdLen)
+
 	bin := DB[start : start+int(I.IdLen)]
 
 	hx := make([]byte, hex.EncodedLen(len(bin)))
 	_ = hex.Encode(hx, bin)
-	//fmt.Printf("%s\n", hx)
 
 	s, err := strconv.ParseInt(fmt.Sprintf("%s", hx), 16, 64)
 	if err != nil {
@@ -826,7 +856,7 @@ func searchDb(ipN []byte, min uint32, max uint32) (uint32, error) {
 func searchIdx(ipN []byte, min uint32, max uint32) uint32 {
 	mx := max
 	mn := min
-	for ; (mx - mn) > 8; {
+	for (mx - mn) > 8 {
 		offset := (mn + mx) >> 1
 		if string(ipN) > string(M.MIdxArr[offset]) {
 			mn = offset
