@@ -18,7 +18,6 @@ var hbo binary.ByteOrder
 
 func init() {
 	SetEndian(LITTLE)
-	fmt.Printf("host binary endian set to %s\n", hbo)
 }
 
 var id2iso = [255]string{
