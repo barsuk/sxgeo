@@ -5,8 +5,11 @@ A tool to work with Sypex Geo database, which helps detect a country and a city 
 
 ## Настройка
 В базу записаны коды, зависящие от машинного порядка записи байтов (LittleEndian, BigEndian).
+Для начала работы нужно определить порядок на рабочей машине.
 По умолчанию в переменную hbo установлена LittleEndian. 
 ```
 var hbo = binary.LittleEndian
 ```
-Кодировку можно определить с помощью функции endian/DetectEndian().
+Кодировку определяйте с помощью функции DetectEndian(), задавайте SetEndian(sxgeo.LITTLE || sxgeo.BIG).
+
+

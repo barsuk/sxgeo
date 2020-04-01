@@ -5,6 +5,23 @@ import (
 	"unsafe"
 )
 
+const LITTLE = true
+const BIG = false
+
+// SetEndian sets host endian
+func SetEndian(order bool)  {
+	if order == LITTLE {
+		hbo = binary.LittleEndian
+		return
+	}
+	hbo = binary.BigEndian
+}
+
+// Endian sets host endian
+func Endian() string {
+	return hbo.String()
+}
+
 // https://stackoverflow.com/a/53286786
 func DetectEndian() (binary.ByteOrder, error) {
 	buf := [2]byte{}

@@ -13,8 +13,13 @@ import (
 	"strings"
 )
 
-// detect and set here your host endianness if do not want to use DetectEndian
-var hbo = binary.LittleEndian
+// Detect and set here your host endianness manually if do not want to use DetectEndian
+var hbo binary.ByteOrder
+
+func init() {
+	SetEndian(LITTLE)
+	fmt.Printf("host binary endian set to %s\n", hbo)
+}
 
 var id2iso = [255]string{
 	"",
