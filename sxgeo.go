@@ -298,10 +298,13 @@ type Info struct {
 }
 
 type Meta struct {
-	BlockLen     byte
-	BIdxStr      []byte
-	MIdxStr      []byte
-	Pack         [][]byte
+	BlockLen byte
+	BIdxStr  []byte
+	MIdxStr  []byte
+
+	Pack        [][]byte
+	PackHeaders [][]Header
+
 	DbBegin      int64
 	BIdxArr      []uint32
 	MIdxArr      [][]byte
@@ -379,11 +382,18 @@ func ReadDBToMemory(path string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("cannot read pack: %v", err)
 	}
-	pack := bytes.Split(packRaw, []byte("\000"))
-	//for i := 0; i < cap(pack); i++ {
-	//	fmt.Println(string(pack[i]))
-	//}
-	M.Pack = pack
+	packHeaders := bytes.Split(packRaw, []byte("\000"))
+	hs := make([][]Header, 3)
+	for i := 0; i < len(packHeaders); i++ {
+		ph, err := unpackHeaders(packHeaders[i])
+		if err != nil {
+			return false, fmt.Errorf("cannot unpack headers: %v", err)
+		}
+		hs[i] = ph
+	}
+	//os.Exit(0)
+	//M.Pack = packHeaders
+	M.PackHeaders = hs
 
 	bIdxStr := make([]byte, int(I.BIdxLen)*4)
 	_, err = f.Read(bIdxStr)
@@ -452,18 +462,47 @@ func ReadDBToMemory(path string) (bool, error) {
 	return true, nil
 }
 
+// Header распакованный заголовок города, региона или страны
+type Header struct {
+	Name     string
+	Selector string
+	Length   int
+	PowExp   float64
+}
+
+// распаковывает заранее заголовки города, региона или страны
+func unpackHeaders(p []byte) ([]Header, error) {
+	var headers []Header
+	packHeaders := bytes.Split(p, []byte("/"))
+	for _, ph := range packHeaders {
+		x := bytes.Split(ph, []byte(":"))
+		typeChars, name := x[0], string(x[1])
+		selector := string(typeChars[0]) // $type0
+		h := Header{
+			Name:     name,
+			Selector: selector,
+		}
+
+		if selector == "N" || selector == "n" || selector == "c" {
+			length, err := strconv.Atoi(string(typeChars[1]))
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse type char for n: %v", err)
+			}
+			powexp := math.Pow(10, float64(length))
+			h.Length = length
+			h.PowExp = powexp
+		}
+		headers = append(headers, h)
+	}
+
+	return headers, nil
+}
+
 func GetCityFull(ip string) (*Full, error) {
 	seek, err := Seek(ip)
 	if err != nil {
 		return nil, err
 	}
-
-	//fmt.Printf("%b\n", val)
-	//fmt.Printf("%s\n", val)
-	//fmt.Printf("%b\n", buf)
-	//fmt.Printf("% x\n", buf)
-	//fmt.Printf("%v\n", ip)
-	//log.Fatalf("seek: %d", seek)
 
 	if seek < 1 {
 		return nil, fmt.Errorf("unknown error with seek")
@@ -478,35 +517,41 @@ func GetCityFull(ip string) (*Full, error) {
 	return parsedCity, nil
 }
 
+const (
+	PACKTYPECOUNTRY = 0
+	PACKTYPEREGION  = 1
+	PACKTYPECITY    = 2
+)
+
 func parseFullCity(seek uint32) (*Full, error) {
 	full := new(Full)
 	var regionSeek uint32
-	var onlyCountry bool
 	if seek < I.CountrySize {
-		country, err := readData(seek, I.MaxCountry, 0)
+		country, err := readData(seek, I.MaxCountry, PACKTYPECOUNTRY)
 		if err != nil {
 			return nil, fmt.Errorf("cannot read country data")
 		}
-		city, err := unpack(2, []byte{})
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse full city")
-		}
 
-		fmt.Printf("country: %v\n", country)
-		fmt.Printf("city 1: %v\n", city)
-		onlyCountry = true
-		panic("TODO")
+		full.City = &City{}
+		full.Region = &Region{}
+		full.Country = &Country{
+			ID:     country["id"].(uint8),
+			ISO:    fmt.Sprintf("%s", country["iso"]),
+			NameRu: fmt.Sprintf("%s", country["name_ru"]),
+			NameEn: fmt.Sprintf("%s", country["name_en"]),
+		}
+		//log.Fatalln("TODO AND REGION SEEK")
 	} else {
-		city, err := readData(seek, I.MaxCity, 2)
+		city, err := readData(seek, I.MaxCity, PACKTYPECITY)
 		if err != nil {
 			return nil, fmt.Errorf("cannot read country data")
 		}
 		regionSeek = city["region_seek"].(uint32)
 
-		full.Country = &Country{
-			ID:  city["country_id"].(uint8),
-			ISO: id2iso[city["country_id"].(uint8)],
-		}
+		//full.Country = &Country{
+		//	ID:  city["country_id"].(uint8),
+		//	ISO: id2iso[city["country_id"].(uint8)],
+		//}
 
 		full.City = &City{
 			ID:        int((city["id"]).(uint32)),
@@ -515,32 +560,29 @@ func parseFullCity(seek uint32) (*Full, error) {
 			Latitude:  city["lat"].(float64),
 			Longitude: city["lon"].(float64),
 		}
-	}
 
-	region, err := readData(regionSeek, I.MaxRegion, 1)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read region data")
-	}
-	full.Region = &Region{
-		ID:     int((region["id"]).(uint32)),
-		ISO:    fmt.Sprintf("%s", region["iso"]),
-		NameRu: fmt.Sprintf("%s", region["name_ru"]),
-		NameEn: fmt.Sprintf("%s", region["name_en"]),
-	}
+		region, err := readData(regionSeek, I.MaxRegion, PACKTYPEREGION)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read region data")
+		}
 
-	if !onlyCountry {
-		country, err := readData(uint32(region["country_seek"].(uint16)), I.MaxCountry, 0)
+		full.Region = &Region{
+			ID:     int((region["id"]).(uint32)),
+			ISO:    fmt.Sprintf("%s", region["iso"]),
+			NameRu: fmt.Sprintf("%s", region["name_ru"]),
+			NameEn: fmt.Sprintf("%s", region["name_en"]),
+		}
+
+		country, err := readData(uint32(region["country_seek"].(uint16)), I.MaxCountry, PACKTYPECOUNTRY)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read country")
 		}
-		fmt.Printf("not only country: %v", country)
 		full.Country = &Country{
 			ID:     country["id"].(uint8),
 			ISO:    fmt.Sprintf("%s", country["iso"]),
 			NameRu: fmt.Sprintf("%s", country["name_ru"]),
 			NameEn: fmt.Sprintf("%s", country["name_en"]),
 		}
-		panic("ЛЬША не ПОЛЬША")
 	}
 
 	return full, nil
@@ -548,12 +590,25 @@ func parseFullCity(seek uint32) (*Full, error) {
 
 func readData(seek uint32, max uint16, packType int) (map[string]interface{}, error) {
 	var raw []byte
-	if seek > 0 && max > 0 {
+	if (seek > 0) && (max > 0) {
 		if packType == 1 {
 			raw = Regions[seek : seek+uint32(max)]
 		} else {
 			raw = Cities[seek : seek+uint32(max)]
 		}
+	}
+
+	// странная заглушка на случай, если вдруг
+	if len(raw) < 1 {
+		unpacked := make(map[string]interface{})
+		for _, ph := range M.PackHeaders[packType] {
+			if ph.Selector == "b" || ph.Selector == "c" {
+				unpacked[ph.Name] = nil
+			} else {
+				unpacked[ph.Name] = nil
+			}
+		}
+		return unpacked, nil
 	}
 
 	unpacked, err := unpack(packType, raw)
@@ -566,46 +621,23 @@ func readData(seek uint32, max uint16, packType int) (map[string]interface{}, er
 
 func unpack(packType int, item []byte) (map[string]interface{}, error) {
 	unpacked := make(map[string]interface{})
-	p := M.Pack[packType]
-	packHeader := bytes.Split(p, []byte("/"))
 	position := 0
-	for _, ph := range packHeader {
-		x := bytes.Split(ph, []byte(":"))
-		typeChars, name := x[0], x[1]
-		selector := string(typeChars[0]) // $type0
-
-		//fmt.Printf("pack head %d: %s\n", i, ph)
-
-		if len(item) < 1 {
-			var value string
-
-			if !(selector == "b" || selector == "c") {
-				value = "0"
-			}
-			unpacked[string(name)] = value
-			continue
-		}
+	for _, ph := range M.PackHeaders[packType] {
+		name := ph.Name
+		selector := ph.Selector // $type0
 
 		var length int
 		switch selector {
-		//case "t":
-		case "T":
+		case "t", "T":
 			length = 1
-		//case "s":
-		//case "n":
-		case "S":
+		case "s", "n", "S":
 			length = 2
-		//case "m":
-		case "M":
+		case "m", "M":
 			length = 3
 		case "d":
 			length = 8
 		case "c":
-			l, err := strconv.Atoi(string(typeChars[1]))
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse type char for n: %v", err)
-			}
-			length = l
+			length = ph.Length
 			//panic("c!")
 		case "b":
 			length = bytes.Index(item[position:], []byte{0})
@@ -712,24 +744,14 @@ func unpack(packType int, item []byte) (map[string]interface{}, error) {
 			if err := binary.Read(bytes.NewReader(val), hbo, &v); err != nil {
 				return nil, fmt.Errorf("cannot unpack selected: %v", err)
 			}
-			expInt, err := strconv.Atoi(string(typeChars[1]))
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse type char for n: %v", err)
-			}
-			exp := float64(expInt)
-			result = float64(v) / (math.Pow(10, exp))
+			result = float64(v) / ph.PowExp
 			//panic("n")
 		case "N":
 			var v rune
 			if err := binary.Read(bytes.NewReader(val), hbo, &v); err != nil {
 				return nil, fmt.Errorf("cannot unpack selected: %v", err)
 			}
-			expInt, err := strconv.Atoi(string(typeChars[1]))
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse type char for N: %v", err)
-			}
-			exp := float64(expInt)
-			result = float64(v) / (math.Pow(10, exp))
+			result = float64(v) / ph.PowExp
 			//panic("N")
 		case "c":
 			v := bytes.TrimRight(val, " ")
@@ -741,8 +763,8 @@ func unpack(packType int, item []byte) (map[string]interface{}, error) {
 			//panic("b")
 		}
 		position += length
-		unpacked[string(name)] = result
-		//fmt.Printf("%[1]v, %[1]T\n", result)
+		unpacked[name] = result
+		//fmt.Printf("%[1]s, %[1]T\n", result)
 	}
 
 	return unpacked, nil

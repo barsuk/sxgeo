@@ -43,31 +43,44 @@ func TestGetCityFull(t *testing.T) {
 		t.Fatalf("%s %v", path, err)
 	}
 
-	testCases := []struct {
-		ip string
-	}{
-		{"31.174.87.24"},
-		//{"31.174.87.2",},
-		//{"31.174.87.224",},
-		//{"198.16.66.100",},
-		//{"31.173.87.247",},
-		//{"91.193.178.99",},
-		//{"178.140.236.47",},
+	// более-менее валидные адреса можно взять с https://www.4it.me/getlistip?cityid=5138
+	tcs := []string{
+		"1.8.8.8",
+		"4.8.8.8",
+		"8.9.8.8",
+		"192.8.8.8",
+		"128.8.8.8",
+		//"240.8.8.8", // out of diap
+
+		"132.95.44.0",
+
+		"31.174.87.24",
+		"31.174.87.2",
+		"31.174.87.224",
+		"198.16.66.100",
+		"31.173.87.247",
+		"91.193.178.99",
+		"178.140.236.47",
+		"5.22.153.4",
+		"37.49.192.5",
+		"2.60.57.9",
+		"37.112.130.8",
+		"95.107.16.10",
+		"24.141.149.0",
 	}
-	for _, tc := range testCases {
-		fmt.Printf("%s\n", tc.ip)
-		c, err := GetCityFull(tc.ip)
+
+	for _, ip := range tcs {
+		fmt.Printf("%s\n", ip)
+		c, err := GetCityFull(ip)
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
-		fmt.Printf("%+v\n", c)
 		enc, err := json.Marshal(c)
 		if err != nil {
-			fmt.Printf("error: %v", err)
-			os.Exit(1)
+			t.Fatalf("%v", err)
 		}
 
 		fmt.Printf("%s\n", enc)
-		os.Exit(0)
+		//os.Exit(0)
 	}
 }
