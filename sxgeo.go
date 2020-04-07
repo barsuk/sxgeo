@@ -510,8 +510,7 @@ func GetCityFull(ip string) (*Full, error) {
 
 	parsedCity, err := parseFullCity(seek)
 	if err != nil {
-		panic(err)
-		return nil, err
+		return nil, fmt.Errorf("error with full city")
 	}
 
 	return parsedCity, nil
@@ -540,7 +539,6 @@ func parseFullCity(seek uint32) (*Full, error) {
 			NameRu: fmt.Sprintf("%s", country["name_ru"]),
 			NameEn: fmt.Sprintf("%s", country["name_en"]),
 		}
-		//log.Fatalln("TODO AND REGION SEEK")
 	} else {
 		city, err := readData(seek, I.MaxCity, PACKTYPECITY)
 		if err != nil {
