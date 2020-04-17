@@ -795,8 +795,9 @@ func Seek(ip string) (uint32, error) {
 	var min, max uint32
 	if blocksMax-blocksMin > uint32(I.Range) {
 		// Ищем блок в основном индексе
-		part := searchIdx(ipN, blocksMin/uint32(I.Range), blocksMax/uint32(I.Range)-1)
-		//fmt.Printf("%+v\n", part)
+		start := blocksMin / uint32(I.Range)
+		end := blocksMax/uint32(I.Range) - 1
+		part := searchIdx(ipN, start, end)
 
 		// Нашли номер блока, в котором нужно искать IP, теперь находим нужный блок в БД
 		if part > 0 {
@@ -807,8 +808,6 @@ func Seek(ip string) (uint32, error) {
 		} else {
 			max = (part + 1) * uint32(I.Range)
 		}
-		//fmt.Printf("min: %+v\n", min)
-		//fmt.Printf("max: %+v\n", max)
 
 		// Нужно проверить чтобы блок не выходил за пределы блока первого байта
 		if min < blocksMin {
@@ -885,7 +884,12 @@ func searchIdx(ipN []byte, min uint32, max uint32) uint32 {
 		}
 	}
 
-	for ; string(ipN) > string(M.MIdxArr[mn]) && mn < mx; mn++ {
+	for string(ipN) > string(M.MIdxArr[mn]) &&
+		func(p *uint32) uint32 {
+			old := *p
+			*p += 1
+			return old
+		}(&mn) < mx {
 	}
 
 	return mn
