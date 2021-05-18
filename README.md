@@ -12,4 +12,28 @@ var hbo = binary.LittleEndian
 ```
 Кодировку определяйте с помощью функции DetectEndian(), задавайте SetEndian(sxgeo.LITTLE || sxgeo.BIG).
 
+## Использование
+Cчитайте файл SxGeoCity.dat в память:
+```
+	if _, err := sxgeo.ReadDBToMemory(dbPath); err != nil {
+		log.Fatalf("error: cannot read database file: %v", err)
+	}
+```
+IP строкой вида 8.8.8.8 передайте в функцию GetCityFull:
+```
+		city, err := sxgeo.GetCityFull(ip)
+		if err != nil {
+			fmt.Printf("error: %v", err)
+			os.Exit(1)
+		}
+```
+Теперь можно преобразовать полученную структуру, например, в json. 
+```
+		enc, err := json.Marshal(city)
+		if err != nil {
+			fmt.Printf("error: %v", err)
+			os.Exit(1)
+		}
 
+		fmt.Printf("%s\n", enc)
+```
