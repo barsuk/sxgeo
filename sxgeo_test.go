@@ -37,7 +37,7 @@ func TestGetCityFull2(t *testing.T) {
 
 func TestGetCityFull(t *testing.T) {
 	SetEndian(LITTLE)
-	path := os.Getenv("HOME") + "/Downloads/SxGeoCity.dat"
+	path := os.Getenv("SXGEODAT") + "/SxGeoCity.dat"
 	_, err := ReadDBToMemory(path)
 	if err != nil {
 		t.Fatalf("%s %v", path, err)
