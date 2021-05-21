@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Detect and set here your host endianness manually if do not want to use DetectEndian
@@ -297,6 +298,13 @@ type Info struct {
 	PackSize    uint16
 }
 
+// String распечатает информацию о БД
+func (i *Info) String() string {
+	t := time.Unix(int64(i.Time), 0)
+	info := fmt.Sprintf("Version %v, Time %s, Type %v, Charset %v", i.Ver, t, i.Type, i.Charset)
+	return info
+}
+
 type Meta struct {
 	BlockLen byte
 	BIdxStr  []byte
@@ -350,7 +358,114 @@ type Region struct {
 var I Info
 var M Meta
 
-// Reads the whole DB to the memory
+// ToMemory Reads the whole DB to the memory without temp file
+func ToMemory(f *bytes.Reader) (bool, error) {
+	h := make([]byte, 3)
+	_, err := f.Read(h)
+	if err != nil {
+		return false, fmt.Errorf("cannot read header: %v", err)
+	}
+	if err == io.EOF {
+		return false, fmt.Errorf("достигнут конец файла. Так быстро? %v", err)
+	}
+
+	if string(h) != "SxG" {
+		return false, fmt.Errorf("this is not a SxGeo database! %v", err)
+	}
+
+	if err := binary.Read(f, binary.BigEndian, &I); err != nil {
+		return false, fmt.Errorf("cannot unpack info: %v", err)
+	}
+
+	M.BlockLen = 3 + I.IdLen
+
+	packRaw := make([]byte, I.PackSize)
+	_, err = f.Read(packRaw)
+	if err != nil {
+		return false, fmt.Errorf("cannot read pack: %v", err)
+	}
+	packHeaders := bytes.Split(packRaw, []byte("\000"))
+	hs := make([][]Header, 3)
+	for i := 0; i < len(packHeaders); i++ {
+		ph, err := unpackHeaders(packHeaders[i])
+		if err != nil {
+			return false, fmt.Errorf("cannot unpack headers: %v", err)
+		}
+		hs[i] = ph
+	}
+	//os.Exit(0)
+	//M.Pack = packHeaders
+	M.PackHeaders = hs
+
+	bIdxStr := make([]byte, int(I.BIdxLen)*4)
+	_, err = f.Read(bIdxStr)
+	if err != nil {
+		return false, fmt.Errorf("cannot read b-index: %v", err)
+	}
+	M.BIdxStr = bIdxStr
+
+	// m_idx_str
+	mIdxStr := make([]byte, I.MIdxLen*4)
+	_, err = f.Read(mIdxStr)
+	if err != nil {
+		return false, fmt.Errorf("cannot read m-index: %v", err)
+	}
+	M.MIdxStr = mIdxStr
+
+	bIdxArr := make([]uint32, len(M.BIdxStr)/4)
+	if err := binary.Read(bytes.NewReader(M.BIdxStr), binary.BigEndian, &bIdxArr); err != nil {
+		return false, fmt.Errorf("cannot unpack b-idx-array: %v", err)
+	}
+	M.BIdxArr = bIdxArr
+
+	var mIdxArr [][]byte
+	r := bytes.NewReader(mIdxStr)
+	for i := 0; i < len(mIdxStr); {
+		word := make([]byte, 4)
+		_, err := r.Read(word)
+		if err != nil {
+			return false, fmt.Errorf("ты не угадал с числом байтов: %v", err)
+		}
+		mIdxArr = append(mIdxArr, word)
+		i += 4
+	}
+	M.MIdxArr = mIdxArr
+
+	dbBegin, err := f.Seek(0, 1)
+	if err != nil {
+		return false, fmt.Errorf("cannot seek to offset: %v", err)
+	}
+	M.DbBegin = dbBegin
+
+	db := make([]byte, int(I.DbItems)*int(M.BlockLen))
+	_, err = f.Read(db)
+	if err != nil {
+		return false, fmt.Errorf("cannot read db to the memory: %v", err)
+	}
+	DB = db
+
+	regions := make([]byte, int(I.RegionSize))
+	_, err = f.Read(regions)
+	if err != nil {
+		return false, fmt.Errorf("cannot read regions to the memory: %v", err)
+	}
+	Regions = regions
+
+	cities := make([]byte, int(I.CitySize))
+	_, err = f.Read(cities)
+	if err != nil {
+		return false, fmt.Errorf("cannot read cities to the memory: %v", err)
+	}
+	Cities = cities
+
+	M.RegionsBegin = M.DbBegin + int64(I.DbItems)*int64(M.BlockLen)
+	M.CitiesBegin = M.RegionsBegin + int64(I.RegionSize)
+
+	return true, nil
+}
+
+
+// ReadDBToMemory Reads the whole DB to the memory
 func ReadDBToMemory(path string) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {

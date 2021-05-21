@@ -1,12 +1,21 @@
 package sxgeo
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 )
+
+var path string
+
+func TestMain(m *testing.M) {
+	path = os.Getenv("SXGEODAT") + "/SxGeoCity.dat"
+	m.Run()
+}
 
 func TestSetEndian(t *testing.T) {
 	SetEndian(BIG)
@@ -37,7 +46,6 @@ func TestGetCityFull2(t *testing.T) {
 
 func TestGetCityFull(t *testing.T) {
 	SetEndian(LITTLE)
-	path := os.Getenv("SXGEODAT") + "/SxGeoCity.dat"
 	_, err := ReadDBToMemory(path)
 	if err != nil {
 		t.Fatalf("%s %v", path, err)
@@ -81,6 +89,53 @@ func TestGetCityFull(t *testing.T) {
 		}
 
 		fmt.Printf("%s\n", enc)
+		//os.Exit(0)
+	}
+}
+
+func TestToMemory(t *testing.T) {
+	SetEndian(LITTLE)
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("cannot open DB file: %v", err)
+	}
+	defer f.Close()
+
+	dbBytes, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("cannot slurp file to slice of bytes %v", err)
+	}
+
+	buf := bytes.NewReader(dbBytes)
+
+	_, err = ToMemory(buf)
+	if err != nil {
+		t.Fatalf("%s %v", path, err)
+	}
+
+	// более-менее валидные адреса можно взять с https://www.4it.me/getlistip?cityid=5138
+	tcs := []string{
+		"188.255.70.88",
+		"5.22.153.4",
+		"37.49.192.5",
+		"2.60.57.9",
+		"37.112.130.8",
+		"95.107.16.10",
+		"24.141.149.0",
+	}
+
+	for _, ip := range tcs {
+		fmt.Printf("%s\n", ip)
+		_, err := GetCityFull(ip)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		//enc, err := json.Marshal(c)
+		//if err != nil {
+		//	t.Fatalf("%v", err)
+		//}
+
+		//fmt.Printf("%s\n", enc)
 		//os.Exit(0)
 	}
 }
